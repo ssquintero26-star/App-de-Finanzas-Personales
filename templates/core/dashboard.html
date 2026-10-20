@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard · FinTrack{% endblock %}
+
+{% block content %}
+<section class="finance-dashboard">
+    <div class="dashboard-heading">
+        <div>
+            <p class="dashboard-kicker">RESUMEN FINANCIERO</p>
+            <h1>Hola, {{ user.get_full_name|default:user.username }}</h1>
+            <p>Este es el estado de tus finanzas.</p>
+        </div>
+        <a href="{% url 'core:transaction_create' %}" class="dashboard-add-button">+ Nueva transacción</a>
+    </div>
+
+    <div class="dashboard-summary-grid">
+        <article class="dashboard-summary-card">
+            <div class="summary-card-top">
+                <span class="summary-icon summary-icon-amber">▤</span>
+                <details class="dashboard-menu">
+                    <summary aria-label="Acciones de presupuestos">⋮</summary>
+                    <div class="dashboard-menu-items">
+                        <a href="{% url 'core:budget_list' %}">Ver presupuestos</a>
+                        <a href="{% url 'core:budget_create' %}">Nuevo presupuesto</a>
+                    </div>
+                </details>
+            </div>
+            <p>Presupuestos actuales</p>
+            <strong>{{ budget_spent_display }} <small>de {{ budget_amount_display }}</small></strong>
+            <div class="summary-progress"><span style="width: {{ budget_percent_used }}%"></span></div>
+            <span class="summary-caption">{{ active_budget_count }} presupuesto{{ active_budget_count|pluralize:"s" }} activo{{ active_budget_count|pluralize:"s" }}</span>
+        </article>
+
+        <article class="dashboard-summary-card">
+            <div class="summary-card-top">
+                <span class="summary-icon summary-icon-coral">↓</span>
+                <details class="dashboard-menu">
+                    <summary aria-label="Acciones de deudas">⋮</summary>
+                    <div class="dashboard-menu-items">
+                        <a href="{% url 'core:debt_list' %}">Ver deudas</a>
+                        <a href="{% url 'core:debt_create' %}">Nueva deuda</a>
+                    </div>
+                </details>
+            </div>
+            <p>Deudas pendientes</p>
+            <strong>{{ debt_pending_display }}</strong>
+            <span class="summary-caption">{{ open_debt_count }} deuda{{ open_debt_count|pluralize:"s" }} por pagar</span>
+        </article>
+
+        <article class="dashboard-summary-card dashboard-goals-card">
+            <div class="summary-card-top">
+                <span class="summary-icon summary-icon-green">★</span>
+                <details class="dashboard-menu">
+                    <summary aria-label="Acciones de metas">⋮</summary>
+                    <div class="dashboard-menu-items">
+                        <a href="{% url 'core:goal_list' %}">Ver metas</a>
+                        <a href="{% url 'core:goal_create' %}">Nueva meta</a>
+                    </div>
+                </details>
+            </div>
+            <p>Avance de metas</p>
+            <strong>{{ goal_average_progress }}%</strong>
+            <div class="summary-progress summary-progress-green"><span style="width: {{ goal_average_progress }}%"></span></div>
+            <span class="summary-caption">{{ active_goal_count }} meta{{ active_goal_count|pluralize:"s" }} en progreso</span>
+        </article>
+
+        <article class="dashboard-summary-card">
+            <div class="summary-card-top">
+                <span class="summary-icon summary-icon-violet">⇄</span>
+                <details class="dashboard-menu">
+                    <summary aria-label="Acciones de gastos compartidos">⋮</summary>
+                    <div class="dashboard-menu-items">
+                        <a href="{% url 'core:shared_expense_list' %}">Ver gastos compartidos</a>
+                        <a href="{% url 'core:shared_expense_create' %}">Nuevo gasto</a>
+                    </div>
+                </details>
+            </div>
+            <p>Pendiente por recuperar</p>
+            <strong>{{ shared_expense_pending_display }}</strong>
+            <span class="summary-caption">{{ active_shared_expense_count }} gasto{{ active_shared_expense_count|pluralize:"s" }} activo{{ active_shared_expense_count|pluralize:"s" }} · {{ shared_expense_debtor_count }} persona{{ shared_expense_debtor_count|pluralize:"s" }} con saldo pendiente</span>
+        </article>
+    </div>
+
+    <div class="dashboard-main-grid">
+        <article class="dashboard-panel dashboard-accounts-panel">
+            <div class="dashboard-panel-heading">
+                <div>
+                    <h2>Mis cuentas</h2>
+                    <p>{{ accounts|length }} cuenta{{ accounts|length|pluralize:"s" }} activa{{ accounts|length|pluralize:"s" }}</p>
+                </div>
+                <details class="dashboard-menu">
+                    <summary aria-label="Acciones de cuentas">⋮</summary>
+                    <div class="dashboard-menu-items">
+                        <a href="{% url 'core:account_list' %}">Ver todas</a>
+                        <a href="{% url 'core:account_create' %}">Nueva cuenta</a>
+                    </div>
+                </details>
+            </div>
+
+            <div class="accounts-total">
+                {{ total_balance_display }}
+                <span>Balance principal</span>
+            </div>
+
+            <div class="account-donut-wrap"><canvas id="categoryChart"></canvas></div>
+            <ul class="dashboard-account-list">
+                {% for item in accounts|slice:":4" %}
+                <li>
+                    <span class="account-avatar">{{ item.account.name|slice:":1"|upper }}</span>
+                    <span><b>{{ item.account.name }}</b><small>{{ item.account.get_account_type_display }}</small></span>
+                    <strong>{{ item.balance_display }}</strong>
+                </li>
+                {% empty %}
+                <li class="dashboard-empty">Aún no tienes cuentas registradas.</li>
+                {% endfor %}
+            </ul>
+        </article>
+
+        <article class="dashboard-panel dashboard-chart-panel">
+            <div class="dashboard-panel-heading">
+                <div>
+                    <h2>Flujo mensual</h2>
+                    <p>Ingresos y gastos de los últimos seis meses</p>
+                </div>
+                <span class="report-tag report-tag-purple">EN VIVO</span>
+            </div>
+            <div class="dashboard-chart-tabs" aria-label="Indicadores del gráfico">
+                <span><i class="chart-dot chart-dot-income"></i>Ingresos</span>
+                <span><i class="chart-dot chart-dot-expense"></i>Gastos</span>
+            </div>
+            <div class="dashboard-line-chart"><canvas id="monthlyChart"></canvas></div>
+        </article>
+
+        <article class="dashboard-panel dashboard-transactions-panel">
+            <div class="dashboard-panel-heading">
+                <div><h2>Transacciones</h2><p>Movimientos recientes</p></div>
+                <details class="dashboard-menu">
+                    <summary aria-label="Acciones de transacciones">⋮</summary>
+                    <div class="dashboard-menu-items">
+                        <a href="{% url 'core:transaction_list' %}">Ver todas</a>
+                        <a href="{% url 'core:transaction_create' %}">Nueva transacción</a>
+                    </div>
+                </details>
+            </div>
+            <ul class="dashboard-transaction-list">
+                {% for tx in recent_transactions|slice:":6" %}
+                <li>
+                    <span class="transaction-icon transaction-icon-{{ tx.transaction_type }}">{% if tx.transaction_type == 'income' %}↗{% elif tx.transaction_type == 'expense' %}↘{% else %}↔{% endif %}</span>
+                    <span class="transaction-copy"><b>{{ tx.description|default:"Sin descripción" }}</b><small>{{ tx.account.name }} · {{ tx.date|date:"d M" }}</small></span>
+                    <strong class="transaction-amount transaction-amount-{{ tx.transaction_type }}">{% if tx.transaction_type == 'income' %}+{% elif tx.transaction_type == 'expense' %}−{% endif %}{{ tx.amount_display }}</strong>
+                </li>
+                {% empty %}
+                <li class="dashboard-empty">Aún no hay transacciones.</li>
+                {% endfor %}
+            </ul>
+            <a href="{% url 'core:transaction_list' %}" class="dashboard-view-all">Ver todas las transacciones →</a>
+        </article>
+    </div>
+
+    <article class="dashboard-panel">
+        <div class="dashboard-panel-heading">
+            <div><h2>Últimos gastos compartidos</h2><p>Registrados recientemente</p></div>
+            <details class="dashboard-menu">
+                <summary aria-label="Acciones de gastos compartidos">⋮</summary>
+                <div class="dashboard-menu-items">
+                    <a href="{% url 'core:shared_expense_list' %}">Ver todos</a>
+                    <a href="{% url 'core:shared_expense_create' %}">Nuevo gasto</a>
+                </div>
+            </details>
+        </div>
+        <ul class="dashboard-transaction-list">
+            {% for se in recent_shared_expenses %}
+            <li>
+                <span class="transaction-icon transaction-icon-expense">⇄</span>
+                <span class="transaction-copy"><b>{{ se.name }}</b><small>{{ se.date|date:"d M" }} · pagó {{ se.payer_participant.display_name }}</small></span>
+                <strong class="transaction-amount transaction-amount-expense">{{ se.total_amount_display }} <small>pendiente {{ se.amount_pending_display }}</small></strong>
+            </li>
+            {% empty %}
+            <li class="dashboard-empty">Aún no hay gastos compartidos registrados.</li>
+            {% endfor %}
+        </ul>
+    </article>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const monthlyData = JSON.parse('{{ monthly_chart|escapejs }}');
+const categoryData = JSON.parse('{{ category_chart|escapejs }}');
+
+if (window.Chart) {
+    new Chart(document.getElementById('monthlyChart'), {
+        type: 'line',
+        data: {
+            labels: monthlyData.labels,
+            datasets: [
+                { label: 'Ingresos', data: monthlyData.income, borderColor: '#665cff', backgroundColor: 'rgba(102, 92, 255, .12)', fill: true, tension: .42, borderWidth: 3, pointRadius: 3, pointHoverRadius: 5 },
+                { label: 'Gastos', data: monthlyData.expense, borderColor: '#ff7a6b', backgroundColor: 'transparent', tension: .42, borderWidth: 3, pointRadius: 3, pointHoverRadius: 5 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { backgroundColor: '#263348', padding: 12, callbacks: { label: context => `${context.dataset.label}: $${context.parsed.y.toLocaleString('en-US')}` } } },
+            scales: { y: { beginAtZero: true, border: { display: false }, grid: { color: '#edf0f7' }, ticks: { color: '#98a2b3', callback: value => `$${value}` } }, x: { border: { display: false }, grid: { display: false }, ticks: { color: '#98a2b3' } } }
+        }
+    });
+
+    new Chart(document.getElementById('categoryChart'), {
+        type: 'doughnut',
+        data: { labels: categoryData.labels, datasets: [{ data: categoryData.data, backgroundColor: categoryData.colors.length ? categoryData.colors : ['#665cff', '#77d83d', '#ffbd3f', '#36c3e8', '#ff7a6b'], borderWidth: 4, borderColor: '#fff' }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '72%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => `${context.label}: $${context.parsed.toLocaleString('en-US')}` } } } }
+    });
+}
+</script>
+{% endblock %}
