@@ -322,7 +322,13 @@ class AccountFormMixin:
             instance = self.get_detail_instance(acc_type)
             forms_by_type[acc_type] = form_cls(data, instance=instance)
         return forms_by_type
-
+    
+    def get_form_kwargs(self):
+        """Pasa el usuario al formulario para validar nombres duplicados."""
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+    
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         if "detail_forms" not in kwargs:
@@ -406,6 +412,12 @@ class CategoryCreateView(UserOwnedMixin, SuccessMessageMixin, CreateView):
     template_name = "core/categories/form.html"
     success_url = reverse_lazy("core:category_list")
     success_message = "Categoría creada."
+    
+    def get_form_kwargs(self):
+        """Pasa el usuario al formulario para validar nombres duplicados."""
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
     def form_valid(self, form):
         """Asigna el usuario autenticado como dueño de la categoría antes de guardar."""
@@ -422,6 +434,11 @@ class CategoryUpdateView(UserOwnedMixin, SuccessMessageMixin, UpdateView):
     success_url = reverse_lazy("core:category_list")
     success_message = "Categoría actualizada."
 
+    def get_form_kwargs(self):
+        """Pasa el usuario al formulario para validar nombres duplicados."""
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
 class CategoryDeleteView(UserOwnedMixin, DeleteView):
     """Eliminación de una categoría del usuario autenticado."""
