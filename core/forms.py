@@ -161,7 +161,22 @@ class DebtForm(forms.ModelForm):
             "observaciones": forms.Textarea(attrs={"rows": 3}),
         }
 
+    def __init__(self, *args, user=None, **kwargs):
+        """Recibe el usuario dueño para poder validar nombres duplicados."""
+        super().__init__(*args, **kwargs)
+        self.user = user
 
+    def clean_nombre(self):
+        """Evita el IntegrityError de unique_together (user, nombre)."""
+        nombre = self.cleaned_data["nombre"].strip()
+        if self.user is not None:
+            duplicadas = Debt.objects.filter(user=self.user, nombre=nombre)
+            if self.instance.pk:
+                duplicadas = duplicadas.exclude(pk=self.instance.pk)
+            if duplicadas.exists():
+                raise forms.ValidationError("Ya tienes una deuda con ese nombre.")
+        return nombre
+    
 class GoalForm(forms.ModelForm):
     """Formulario CRUD de metas de ahorro/inversión."""
 

@@ -67,6 +67,7 @@ from core.models import (
 from core.services.contacts import add_contact, remove_contact, search_users
 from core.services.debts import (
     apply_transaction_to_debt,
+    order_debts_by_priority,
     get_debt_transaction_history,
     revert_transaction_from_debt,
 )
@@ -505,6 +506,10 @@ class DebtListView(UserOwnedMixin, ListView):
     template_name = "core/debts/list.html"
     context_object_name = "debts"
 
+    def get_queryset(self):
+        """Pendientes primero, luego nivel de prioridad y fecha límite."""
+        return order_debts_by_priority(super().get_queryset())
+    
     def get_context_data(self, **kwargs):
         """Agrega los montos formateados y la prioridad de cada deuda."""
         ctx = super().get_context_data(**kwargs)
@@ -531,7 +536,13 @@ class DebtCreateView(UserOwnedMixin, SuccessMessageMixin, CreateView):
     template_name = "core/debts/form.html"
     success_url = reverse_lazy("core:debt_list")
     success_message = "Deuda registrada."
-
+    
+    def get_form_kwargs(self):
+        """Pasa el usuario al formulario para validar nombres duplicados."""
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+    
     def form_valid(self, form):
         """Asigna el usuario autenticado como dueño de la deuda antes de guardar."""
         form.instance.user = self.request.user
@@ -546,7 +557,12 @@ class DebtUpdateView(UserOwnedMixin, SuccessMessageMixin, UpdateView):
     template_name = "core/debts/form.html"
     success_url = reverse_lazy("core:debt_list")
     success_message = "Deuda actualizada."
-
+    
+    def get_form_kwargs(self):
+        """Pasa el usuario al formulario para validar nombres duplicados."""
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
 class DebtDeleteView(UserOwnedMixin, DeleteView):
     """Eliminación de una deuda del usuario autenticado (las transacciones asociadas

@@ -448,7 +448,7 @@ class Debt(TimestampedUserOwnedModel):
         """Estado derivado de la deuda: pagada si no queda saldo, vencida si pasó la fecha límite, si no pendiente."""
         if self.monto_pendiente <= 0:
             return self.DebtStatus.PAGADA
-        if self.fecha_limite < timezone.now().date():
+        if self.fecha_limite < timezone.localdate():
             return self.DebtStatus.VENCIDA
         return self.DebtStatus.PENDIENTE
 

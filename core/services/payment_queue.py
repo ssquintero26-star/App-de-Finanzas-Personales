@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any, Iterator
 
 from django.db import models
-
+from django.utils import timezone
 
 # ---------------------------------------------------------------------------
 # Mapeo fecha -> nivel de prioridad
@@ -39,7 +39,7 @@ def priority_from_due_date(
 ) -> int:
     """Devuelve 1 (más urgente) a `max_level` (menos urgente) según los
     días que falten para `due_date` respecto a `today`."""
-    today = today or date.today()
+    today = today or timezone.localdate()
     days_left = (due_date - today).days
     for max_days, level in thresholds:
         if days_left <= max_days:
@@ -119,7 +119,7 @@ class PaymentPriorityQueue:
 def build_debt_items(user, today: date | None = None) -> list[PaymentItem]:
     from core.models import Debt
 
-    today = today or date.today()
+    today = today or timezone.localdate()
     items = []
     debts = Debt.objects.filter(
         user=user, monto_pagado__lt=models.F("monto_requerido")
@@ -144,7 +144,7 @@ def build_owner_shared_expense_items(
     contactos que pagaron gastos compartidos)."""
     from core.models import SharedExpenseParticipant
 
-    today = today or date.today()
+    today = today or timezone.localdate()
     items = []
     qs = SharedExpenseParticipant.objects.filter(
         shared_expense__user=user,

@@ -1,8 +1,16 @@
 """Servicios de lógica de negocio para el módulo de deudas."""
 
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.db.models import Case, F, IntegerField, Value, When
+from django.utils import timezone
+
+from core.services.payment_queue import (
+    DEFAULT_MAX_LEVEL,
+    DEFAULT_PRIORITY_THRESHOLDS,
+)
 
 
 def apply_transaction_to_debt(transaction):
@@ -56,3 +64,34 @@ def validate_expense_against_debt(debt, amount):
 def get_debt_transaction_history(debt):
     """Retorna el queryset de transacciones asociadas a una deuda, ordenadas por fecha."""
     return debt.transactions.select_related("account", "category").order_by("-date")
+
+
+def order_debts_by_priority(queryset, today: date | None = None):
+    """Ordena un queryset de `Debt` por urgencia, resuelto en la base de datos.
+
+    1. Estado: con saldo (pendiente o vencida) primero; pagadas al final.
+    2. Nivel de prioridad (1 = más urgente ... 5), con los mismos umbrales que `priority_from_due_date`.
+    3. Fecha límite: la que vence primero va primero.
+    4. `pk` como desempate.
+    """
+    today = today or timezone.localdate()
+    whens = [
+        When(fecha_limite__lte=today + timedelta(days=max_days), then=Value(level))
+        for max_days, level in DEFAULT_PRIORITY_THRESHOLDS
+    ]
+    return (
+        queryset.annotate(
+            _sin_saldo=Case(
+                When(monto_pagado__gte=F("monto_requerido"), then=Value(1)),
+                default=Value(0),
+                output_field=IntegerField(),
+            ),
+            _nivel=Case(
+                When(monto_pagado__gte=F("monto_requerido"), then=Value(0)),
+                *whens,
+                default=Value(DEFAULT_MAX_LEVEL),
+                output_field=IntegerField(),
+            ),
+        )
+        .order_by("_sin_saldo", "_nivel", "fecha_limite", "pk")
+    )
