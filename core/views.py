@@ -93,6 +93,15 @@ from core.services.reports import (
     get_category_distribution,
     get_monthly_income_expense,
 )
+from core.services.payment_queue import build_payment_queue
+from core.services.payment_queue import priority_from_due_date
+
+def payment_queue_view(request):
+    queue = build_payment_queue(request.user)
+    return render(request, "core/payments/queue.html", {
+        "items": queue.to_list(),
+        "count": len(queue),
+    })
 
 
 def format_money_display(value):
@@ -497,12 +506,20 @@ class DebtListView(UserOwnedMixin, ListView):
     context_object_name = "debts"
 
     def get_context_data(self, **kwargs):
-        """Agrega los montos formateados de cada deuda para mostrarlos en la tabla."""
+        """Agrega los montos formateados y la prioridad de cada deuda."""
         ctx = super().get_context_data(**kwargs)
         for debt in ctx.get("debts", []):
+            # Tus formateos existentes
             debt.monto_requerido_display = format_money_display(debt.monto_requerido)
             debt.monto_pagado_display = format_money_display(debt.monto_pagado)
             debt.monto_pendiente_display = format_money_display(debt.monto_pendiente)
+
+            # NUEVO: Calcular la prioridad solo si hay saldo pendiente
+            if debt.monto_pendiente > 0:
+                debt.prioridad = priority_from_due_date(debt.fecha_limite)
+            else:
+                debt.prioridad = None  # Para las deudas pagadas, no mostramos prioridad
+
         return ctx
 
 

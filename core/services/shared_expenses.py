@@ -319,7 +319,7 @@ def register_shared_expense_payment(
             transaction=transaction,
         )
         participant.amount_paid += amount
-        participant.save(update_fields=["amount_paid", "updated_at"])
+        participant.save(update_fields=["amount_paid"])
     return payment
 
 

@@ -6,7 +6,7 @@ from core.services.credit_cards import (
 )
 from core.services.reports import generate_transactions_pdf, get_category_distribution, get_monthly_income_expense
 from core.services.csv_io import export_transactions_csv, import_transactions_csv
-
+from core.services.payment_queue import build_payment_queue
 
 class FinanceFacade:
     """Fachada única sobre los servicios de cuentas, tarjetas de crédito,
@@ -40,3 +40,5 @@ class FinanceFacade:
 
     def generate_pdf(self, user):
         return generate_transactions_pdf(user)
+    def get_payment_queue(self, user):
+        return build_payment_queue(user)

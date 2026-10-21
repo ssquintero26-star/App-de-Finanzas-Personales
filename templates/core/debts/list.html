@@ -16,6 +16,7 @@
             <th class="text-right">Pagado</th>
             <th class="text-right">Pendiente</th>
             <th>Estado</th>
+            <th>Prioridad</th>
             <th>Progreso</th>
             <th>Fecha Limite</th>
             <th></th>
@@ -31,12 +32,28 @@
             <td class="text-right">${{ debt.monto_pendiente_display }}</td>
             <td>
                 {% if debt.estado == "pagada" %}
-                <span class="badge badge-success">Pagada</span>
+                    <span class="badge bg-success">Pagada</span>
                 {% elif debt.estado == "vencida" %}
-                <span class="badge badge-danger">Vencida</span>
+                    <span class="badge bg-danger">Vencida</span>
                 {% else %}
-                <span class="badge badge-warning">Pendiente</span>
+                    <span class="badge bg-warning text-dark">Pendiente</span>
                 {% endif %}
+            </td>
+
+            <td>
+            {% if debt.prioridad == 1 %}
+                <span class="badge bg-danger">Nivel 1</span>
+            {% elif debt.prioridad == 2 %}
+                <span class="badge bg-warning text-dark">Nivel 2</span>
+            {% elif debt.prioridad == 3 %}
+                <span class="badge bg-info text-dark">Nivel 3</span>
+            {% elif debt.prioridad == 4 %}
+                <span class="badge bg-primary">Nivel 4</span>
+            {% elif debt.prioridad == 5 %}
+                <span class="badge bg-secondary">Nivel 5</span>
+            {% else %}
+                <span class="text-muted">-</span>
+            {% endif %}
             </td>
             <td>
                 <div class="progress-bar">
