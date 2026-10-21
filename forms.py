@@ -68,7 +68,22 @@ class AccountForm(forms.ModelForm):
         widgets = {
             "initial_balance": forms.NumberInput(attrs={"step": "0.01"}),
         }
+        
+    def __init__(self, *args, user=None, **kwargs):
+        """Recibe el usuario dueño para poder validar nombres duplicados."""
+        super().__init__(*args, **kwargs)
+        self.user = user
 
+    def clean_name(self):
+        """Evita el IntegrityError de unique_together (user, name)."""
+        name = self.cleaned_data["name"].strip()
+        if self.user is not None:
+            duplicadas = Account.objects.filter(user=self.user, name=name)
+            if self.instance.pk:
+                duplicadas = duplicadas.exclude(pk=self.instance.pk)
+            if duplicadas.exists():
+                raise forms.ValidationError("Ya tienes una cuenta con ese nombre.")
+        return name
 
 class AccountCreditCardDetailsForm(forms.ModelForm):
     """Formulario de los campos específicos de una cuenta de tipo tarjeta de crédito."""
@@ -133,7 +148,28 @@ class CategoryForm(forms.ModelForm):
         model = Category
         fields = ("name", "category_type", "color", "icon", "is_active")
 
+    def __init__(self, *args, user=None, **kwargs):
+        """Recibe el usuario dueño para poder validar nombres duplicados."""
+        super().__init__(*args, **kwargs)
+        self.user = user
 
+    def clean(self):
+        """Evita el IntegrityError de unique_together (user, name, category_type)."""
+        cleaned = super().clean()
+        name = (cleaned.get("name") or "").strip()
+        category_type = cleaned.get("category_type")
+        if self.user is not None and name and category_type:
+            duplicadas = Category.objects.filter(
+                user=self.user, name=name, category_type=category_type
+            )
+            if self.instance.pk:
+                duplicadas = duplicadas.exclude(pk=self.instance.pk)
+            if duplicadas.exists():
+                self.add_error(
+                    "name", "Ya tienes una categoría con ese nombre y tipo."
+                )
+        return cleaned
+    
 class BudgetForm(forms.ModelForm):
     """Formulario CRUD de presupuestos por categoría y periodo."""
 
