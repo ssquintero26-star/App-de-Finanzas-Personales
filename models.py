@@ -331,13 +331,13 @@ class Transaction(models.Model):
         """Marca la transacción como conciliada y registra la fecha/hora de conciliación."""
         self.is_reconciled = True
         self.reconciled_at = timezone.now()
-        self.save(update_fields=["is_reconciled", "reconciled_at", "updated_at"])
+        self.save(update_fields=["is_reconciled", "reconciled_at"])
 
     def unreconcile(self):
         """Revierte la conciliación, limpiando el estado y la fecha de conciliación."""
         self.is_reconciled = False
         self.reconciled_at = None
-        self.save(update_fields=["is_reconciled", "reconciled_at", "updated_at"])
+        self.save(update_fields=["is_reconciled", "reconciled_at"])
 
 
 class Budget(TimestampedUserOwnedModel):
