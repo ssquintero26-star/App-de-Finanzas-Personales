@@ -368,11 +368,12 @@ def delete_shared_expense(shared_expense):
     `SharedExpensePayment`. Si no tiene Transacción (pagó un contacto), se
     borra el `SharedExpense` directamente, con el mismo efecto en cascada.
 
-    En ambos casos, las Transacciones de **ingreso** de los pagos ya
-    recibidos (`SharedExpensePayment.transaction`) no se tocan: ese dinero
-    entró de verdad a una cuenta y debe seguir reflejado en Transacciones
-    aunque se borre el gasto compartido que le dio origen."""
+    Si existe una transacción asociada, debe ser el tope de la pila del
+    usuario. Hay que desapilar los pagos posteriores antes de borrar el gasto.
+    Los movimientos de pagos no se eliminan indirectamente."""
     if shared_expense.transaction_id:
-        shared_expense.transaction.delete()
+        from core.services.transactions import delete_transaction
+
+        delete_transaction(shared_expense.transaction)
     else:
         shared_expense.delete()

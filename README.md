@@ -9,6 +9,28 @@ de cálculo de saldos, tarjetas de crédito, reportes e importación/exportació
 
 # FinTrack
 
+## Pila de transacciones (LIFO)
+
+`core/services/transaction_stack.py` implementa una pila enlazada real:
+`push()` apila un identificador, `peek()` consulta el tope y `pop()` lo desapila.
+Las tres operaciones tienen coste O(1). No utiliza una cola ni ordena por fecha.
+
+`build_transaction_stack(user)` reconstruye la pila en memoria con los registros
+de ese usuario, desde el primero al último insertado (coste O(n)). La base de
+datos conserva los elementos entre peticiones; no se comparte una pila global.
+El ID inmutable determina la inserción, incluso si se modifica la fecha contable.
+
+La web y la API llaman a `delete_transaction()`: comprueba el tope, ejecuta
+`pop()`, revierte el efecto sobre deudas, metas y pagos compartidos, y elimina
+ese registro dentro de una transacción de base de datos. Las altas y bajas
+bloquean la misma fila de usuario para serializar pushes y pops en motores con
+bloqueo de filas. No se necesita una migración adicional.
+
+Si registras A, luego B y después C con una fecha antigua, el orden de
+eliminación es C → B → A. Los filtros no cambian el tope. La lista se muestra
+en orden de registro. Un gasto compartido que tenga una transacción anterior
+al tope tampoco puede borrarse hasta retirar los movimientos posteriores.
+
 
 Aplicación web de gestión financiera personal construida con **Django 5.2 LTS** y **Django REST Framework**.
 
