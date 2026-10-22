@@ -331,6 +331,7 @@ class TransactionForm(forms.ModelForm):
         `SharedExpenseParticipant.amount_assigned`, y ese módulo no soporta
         edición en v1 (se elimina y se recrea el gasto, no la transacción)."""
         from core.services.debts import validate_expense_against_debt
+        from core.services.transactions import association_before_transaction
         from core.services.goals import (
             validate_expense_against_goal,
             validate_income_against_goal,
@@ -352,6 +353,7 @@ class TransactionForm(forms.ModelForm):
         tx_type = cleaned.get("transaction_type")
         amount = cleaned.get("amount")
         value = cleaned.get("asociar_a") or ""
+        previous = Transaction.objects.get(pk=self.instance.pk) if self.instance.pk else None
 
         # Reinicia ambos FK; se reasigna según la selección.
         self.instance.debt = None
@@ -370,7 +372,7 @@ class TransactionForm(forms.ModelForm):
             self.instance.debt = debt
             if tx_type == "expense" and amount:
                 try:
-                    validate_expense_against_debt(debt, amount)
+                    validate_expense_against_debt(association_before_transaction(debt, previous), amount)
                 except ValidationError as exc:
                     self.add_error("asociar_a", exc.messages[0])
         elif kind == "goal":
@@ -382,9 +384,9 @@ class TransactionForm(forms.ModelForm):
             if amount:
                 try:
                     if tx_type == "income":
-                        validate_income_against_goal(goal, amount)
+                        validate_income_against_goal(association_before_transaction(goal, previous), amount)
                     elif tx_type == "expense":
-                        validate_expense_against_goal(goal, amount)
+                        validate_expense_against_goal(association_before_transaction(goal, previous), amount)
                 except ValidationError as exc:
                     self.add_error("asociar_a", exc.messages[0])
         return cleaned

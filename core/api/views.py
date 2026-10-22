@@ -8,7 +8,10 @@ en `core.services`; el aislamiento por usuario se centraliza en
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.db import transaction as db_transaction
 from django.http import HttpResponse
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -21,6 +24,7 @@ from core.api.serializers import (
     CategorySerializer,
     ContactGroupSerializer,
     ContactSerializer,
+    DashboardSerializer,
     DebtSerializer,
     GoalSerializer,
     RegisterSerializer,
@@ -45,6 +49,7 @@ from core.models import (
     Transaction,
 )
 from core.services.contacts import add_contact, remove_contact, search_users
+from core.services.transactions import validate_latest_transaction
 from core.services.debts import apply_transaction_to_debt, revert_transaction_from_debt
 from core.services.goals import apply_transaction_to_goal, revert_transaction_from_goal
 from core.services.shared_expenses import (
@@ -87,6 +92,8 @@ class UserOwnedViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return self.queryset.none()
         return self.queryset.filter(user=self.request.user)
 
     def perform_create(self, serializer):
@@ -235,7 +242,10 @@ class SharedExpenseViewSet(UserOwnedViewSet):
             data=request.data, context={"shared_expense": shared_expense}
         )
         serializer.is_valid(raise_exception=True)
-        payment = serializer.save()
+        try:
+            payment = serializer.save()
+        except ValidationError as exc:
+            return Response({"detail": exc.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             SharedExpensePaymentSerializer(payment).data, status=status.HTTP_201_CREATED
         )
@@ -247,7 +257,7 @@ class SharedExpenseViewSet(UserOwnedViewSet):
         payments = (
             SharedExpensePayment.objects.filter(participant__shared_expense=shared_expense)
             .select_related("participant")
-            .order_by("-date", "-created_at")
+            .order_by("-date", "-created_at", "-pk")
         )
         serializer = SharedExpensePaymentSerializer(payments, many=True)
         return Response(serializer.data)
@@ -271,12 +281,14 @@ class TransactionViewSet(UserOwnedViewSet):
     search_fields = ["description", "notes"]
     ordering_fields = ["date", "amount", "created_at"]
 
+    @db_transaction.atomic
     def perform_create(self, serializer):
         """Guarda la transacción del usuario autenticado y aplica su efecto sobre la deuda/meta asociada, si tiene."""
         tx = serializer.save(user=self.request.user)
         apply_transaction_to_debt(tx)
         apply_transaction_to_goal(tx)
 
+    @db_transaction.atomic
     def perform_update(self, serializer):
         """Revierte el efecto de la versión anterior sobre su deuda/meta antes de guardar y aplicar el nuevo."""
         old = Transaction.objects.select_related("debt", "goal").get(
@@ -285,12 +297,15 @@ class TransactionViewSet(UserOwnedViewSet):
         revert_transaction_from_debt(old)
         revert_transaction_from_goal(old)
         tx = serializer.save()
+        tx.refresh_from_db(fields=["debt", "goal"])
         apply_transaction_to_debt(tx)
         apply_transaction_to_goal(tx)
 
+    @db_transaction.atomic
     def perform_destroy(self, instance):
         """Revierte el efecto de la transacción sobre su deuda/meta/pago de gasto
         compartido asociado antes de eliminarla."""
+        validate_latest_transaction(instance)
         revert_transaction_from_debt(instance)
         revert_transaction_from_goal(instance)
         revert_shared_expense_payment_transaction(instance)
@@ -353,7 +368,10 @@ class TransactionViewSet(UserOwnedViewSet):
                 {"detail": "Archivo CSV requerido."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        content = uploaded.read().decode("utf-8-sig")
+        try:
+            content = uploaded.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return Response({"detail": "El archivo CSV debe estar codificado en UTF-8."}, status=status.HTTP_400_BAD_REQUEST)
         result = import_transactions_csv(request.user, content)
         return Response(result)
 
@@ -362,6 +380,7 @@ class DashboardAPIView(APIView):
     """Datos agregados del dashboard: saldo total, saldo por cuenta y gráficos mensual/por categoría."""
 
     permission_classes = [IsAuthenticated]
+    serializer_class = DashboardSerializer
 
     def get(self, request):
         user = request.user
@@ -387,6 +406,7 @@ class PDFReportAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(responses={(200, "application/pdf"): OpenApiTypes.BINARY})
     def get(self, request):
         buffer = generate_transactions_pdf(request.user)
         response = HttpResponse(buffer.read(), content_type="application/pdf")

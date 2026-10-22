@@ -95,7 +95,7 @@ AUTH_PASSWORD_VALIDATORS = [
 AUTH_USER_MODEL = "core.User"
 
 LANGUAGE_CODE = "es-es"
-TIME_ZONE = "America/Mexico_City"
+TIME_ZONE = os.getenv("TIME_ZONE", "America/Bogota")
 USE_I18N = True
 USE_TZ = True
 

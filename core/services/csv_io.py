@@ -89,6 +89,8 @@ def import_transactions_csv(user, csv_content):
                 continue
 
             amount = Decimal(row.get("amount", "0").strip())
+            if not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal("0.01")) or amount >= Decimal("1000000000000"):
+                raise ValueError("El monto debe ser positivo y tener como máximo dos decimales y doce dígitos enteros.")
             description = row.get("description", "").strip()
             if not description:
                 errors.append(f"Fila {row_num}: descripción vacía")

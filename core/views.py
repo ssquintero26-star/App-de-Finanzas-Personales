@@ -17,7 +17,7 @@ from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import ValidationError
 from django.db import transaction as db_transaction
 from django.db.models import Count, F, Q
-from django.http import HttpResponse, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views.generic import (
@@ -65,6 +65,10 @@ from core.models import (
     Transaction,
 )
 from core.services.contacts import add_contact, remove_contact, search_users
+from core.services.transactions import (
+    get_latest_transaction_id,
+    validate_latest_transaction,
+)
 from core.services.debts import (
     apply_transaction_to_debt,
     order_debts_by_priority,
@@ -240,7 +244,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             SharedExpense.objects.filter(user=user)
             .select_related("transaction")
             .prefetch_related("participants")
-            .order_by("-transaction__date")[:5]
+            .order_by("-date", "-pk")[:5]
         )
         for se in recent_shared_expenses:
             se.total_amount_display = format_money_display(se.total_amount)
@@ -913,7 +917,7 @@ class SharedExpenseDetailView(UserOwnedMixin, DetailView):
         ctx["participants"] = participants
         payments = sorted(
             (payment for p in participants for payment in p.payments.all()),
-            key=lambda payment: (payment.date, payment.created_at),
+            key=lambda payment: (payment.date, payment.created_at, payment.pk),
             reverse=True,
         )
         for payment in payments:
@@ -931,6 +935,8 @@ class SharedExpensePaymentCreateView(LoginRequiredMixin, SuccessMessageMixin, Fo
 
     def dispatch(self, request, *args, **kwargs):
         """Resuelve el gasto compartido del usuario autenticado antes de procesar la petición."""
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
         self.shared_expense = get_object_or_404(
             SharedExpense, pk=kwargs["pk"], user=request.user
         )
@@ -947,13 +953,17 @@ class SharedExpensePaymentCreateView(LoginRequiredMixin, SuccessMessageMixin, Fo
 
     def form_valid(self, form):
         """Registra el pago vía el servicio; genera transacción de ingreso solo si el dueño pagó el gasto."""
-        register_shared_expense_payment(
-            participant=form.cleaned_data["participant"],
-            amount=form.cleaned_data["amount"],
-            date=form.cleaned_data["date"],
-            notes=form.cleaned_data["notes"],
-            account=form.cleaned_data.get("account"),
-        )
+        try:
+            register_shared_expense_payment(
+                participant=form.cleaned_data["participant"],
+                amount=form.cleaned_data["amount"],
+                date=form.cleaned_data["date"],
+                notes=form.cleaned_data["notes"],
+                account=form.cleaned_data.get("account"),
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc.messages[0])
+            return self.form_invalid(form)
         return super().form_valid(form)
 
     def get_success_url(self):
@@ -1015,6 +1025,7 @@ class TransactionListView(UserOwnedMixin, ListView):
         ctx["filter_form"] = TransactionFilterForm(
             self.request.user, self.request.GET
         )
+        ctx["latest_transaction_id"] = get_latest_transaction_id(self.request.user)
         for tx in ctx.get("transactions", []):
             tx.amount_display = format_money_display(tx.amount)
         return ctx
@@ -1064,6 +1075,7 @@ class TransactionUpdateView(UserOwnedMixin, SuccessMessageMixin, UpdateView):
             revert_transaction_from_debt(old)
             revert_transaction_from_goal(old)
             response = super().form_valid(form)
+            self.object.refresh_from_db(fields=["debt", "goal"])
             apply_transaction_to_debt(self.object)
             apply_transaction_to_goal(self.object)
         return response
@@ -1076,10 +1088,16 @@ class TransactionDeleteView(UserOwnedMixin, DeleteView):
     template_name = "core/transactions/confirm_delete.html"
     success_url = reverse_lazy("core:transaction_list")
 
+    def get_object(self, queryset=None):
+        obj = super().get_object(queryset)
+        validate_latest_transaction(obj)
+        return obj
+
     def form_valid(self, form):
         """Revierte el efecto de la transacción sobre su deuda/meta/pago de gasto
         compartido asociado antes de eliminarla."""
         with db_transaction.atomic():
+            validate_latest_transaction(self.object)
             revert_transaction_from_debt(self.object)
             revert_transaction_from_goal(self.object)
             revert_shared_expense_payment_transaction(self.object)
@@ -1122,7 +1140,11 @@ class CSVImportView(LoginRequiredMixin, TemplateView):
         """Procesa el CSV subido y muestra el resumen de creados/duplicados/errores."""
         form = CSVImportForm(request.POST, request.FILES)
         if form.is_valid():
-            content = request.FILES["file"].read().decode("utf-8-sig")
+            try:
+                content = request.FILES["file"].read().decode("utf-8-sig")
+            except UnicodeDecodeError:
+                form.add_error("file", "El archivo CSV debe estar codificado en UTF-8.")
+                return self.render_to_response({"form": form})
             result = import_transactions_csv(request.user, content)
             return self.render_to_response(
                 {"form": form, "result": result}
@@ -1156,3 +1178,21 @@ class AttachmentUploadView(LoginRequiredMixin, View):
             attachment.full_clean()
             attachment.save()
         return redirect("core:transaction_list")
+
+
+class AttachmentDownloadView(LoginRequiredMixin, View):
+    """Entrega comprobantes únicamente al propietario de la transacción."""
+
+    def get(self, request, pk):
+        attachment = get_object_or_404(
+            Attachment, pk=pk, transaction__user=request.user
+        )
+        try:
+            uploaded = attachment.file.open("rb")
+        except FileNotFoundError:
+            raise Http404("El comprobante no está disponible.")
+        response = FileResponse(
+            uploaded, as_attachment=True, filename=attachment.original_filename
+        )
+        response["Cache-Control"] = "private, no-store"
+        return response

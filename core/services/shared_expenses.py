@@ -75,6 +75,11 @@ class EqualSplitStrategy(SplitStrategy):
         return [(Decimal(c) / 100).quantize(Decimal("0.01")) for c in amounts_cents]
 
 
+def calculate_equal_split(total_amount, participant_count):
+    """Mantiene la interfaz pública del reparto con la estrategia de partes iguales."""
+    return EqualSplitStrategy().calculate(total_amount, participant_count)
+
+
 class SplitStrategyFactory:
     """Resuelve la instancia de estrategia según `SharedExpense.SplitMethod`.
     Agregar un método de reparto futuro (porcentajes, montos personalizados)
@@ -229,6 +234,8 @@ def create_shared_expense(
 
 def validate_payment_against_participant(participant, amount):
     """Lanza ValidationError si el pago supera el saldo pendiente del participante."""
+    if not amount.is_finite() or amount <= 0:
+        raise ValidationError("El monto del pago debe ser mayor a cero.")
     if amount > participant.amount_pending:
         raise ValidationError(
             f"El monto recibido (${amount:,.2f}) supera el saldo pendiente "
@@ -259,6 +266,7 @@ def get_shared_expense_payment_transaction_type(participant, payer):
     return None
 
 
+@db_transaction.atomic
 def register_shared_expense_payment(
     *, participant, amount, date, notes="", account=None
 ):
@@ -271,8 +279,17 @@ def register_shared_expense_payment(
     movimiento es puramente entre terceros (un contacto paga a otro), no se
     crea ninguna transacción: el registro sigue siendo informativo.
     """
+    participant = (
+        SharedExpenseParticipant.objects.select_for_update()
+        .select_related("shared_expense")
+        .get(pk=participant.pk)
+    )
     validate_payment_against_participant(participant, amount)
     shared_expense = participant.shared_expense
+    if account is not None and (
+        account.user_id != shared_expense.user_id or not account.is_active
+    ):
+        raise ValidationError("La cuenta seleccionada no está disponible.")
     payer = shared_expense.payer_participant
     transaction_type = get_shared_expense_payment_transaction_type(participant, payer)
 

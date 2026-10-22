@@ -24,7 +24,7 @@
             <li><a href="{% url 'core:shared_expense_list' %}">Gastos Compartidos</a></li>
             <li><a href="{% url 'core:contact_list' %}">Contactos</a></li>
             <li><a href="/api/docs/" target="_blank">API</a></li>
-            <li class="nav-user">{{ user.email }} · <a href="{% url 'core:logout' %}">Salir</a></li>
+            <li class="nav-user">{{ user.email }} · <form method="post" action="{% url 'core:logout' %}" class="inline-form">{% csrf_token %}<button type="submit" class="btn btn-sm">Salir</button></form></li>
         </ul>
     </nav>
     {% endif %}
@@ -41,7 +41,7 @@
     </main>
 
     <script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="{% static 'vendor/chartjs/chart.umd.min.js' %}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

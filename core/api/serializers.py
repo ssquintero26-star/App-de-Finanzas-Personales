@@ -7,8 +7,11 @@ querysets al usuario autenticado en `__init__` para no exponer ni permitir
 asociar datos de otros usuarios.
 """
 
+from datetime import date
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.urls import reverse
 from rest_framework import serializers
 
 from core.models import (
@@ -28,6 +31,7 @@ from core.models import (
     Transaction,
 )
 from core.services.accounts import calculate_account_balance
+from core.services.transactions import association_before_transaction
 from core.services.credit_cards import (
     get_available_credit,
     get_next_payment_due_date,
@@ -133,34 +137,34 @@ class AccountSerializer(serializers.ModelSerializer):
             "next_payment_due_date",
         )
 
-    def get_balance(self, obj):
+    def get_balance(self, obj) -> str:
         """Calcula el saldo actual de la cuenta (no es un valor almacenado en BD)."""
         return str(calculate_account_balance(obj))
 
     def _get_details(self, obj):
         return getattr(obj, "credit_card_details", None)
 
-    def get_used_credit(self, obj):
+    def get_used_credit(self, obj) -> str | None:
         """Crédito utilizado, solo para cuentas de tipo tarjeta de crédito."""
         if obj.account_type != Account.AccountType.CREDIT:
             return None
         return str(get_used_credit(obj))
 
-    def get_available_credit(self, obj):
+    def get_available_credit(self, obj) -> str | None:
         """Crédito disponible, solo para cuentas de tipo tarjeta de crédito con detalle."""
         details = self._get_details(obj)
         if obj.account_type != Account.AccountType.CREDIT or not details:
             return None
         return str(get_available_credit(obj, details))
 
-    def get_next_statement_date(self, obj):
+    def get_next_statement_date(self, obj) -> date | None:
         """Próxima fecha de corte, solo para cuentas de tipo tarjeta de crédito con detalle."""
         details = self._get_details(obj)
         if obj.account_type != Account.AccountType.CREDIT or not details:
             return None
         return get_next_statement_date(details)
 
-    def get_next_payment_due_date(self, obj):
+    def get_next_payment_due_date(self, obj) -> date | None:
         """Próxima fecha límite de pago, solo para cuentas de tipo tarjeta de crédito con detalle."""
         details = self._get_details(obj)
         if obj.account_type != Account.AccountType.CREDIT or not details:
@@ -230,6 +234,13 @@ class TagSerializer(serializers.ModelSerializer):
 class AttachmentSerializer(serializers.ModelSerializer):
     """Serializer de solo lectura de adjuntos (la creación se maneja aparte, con validación de archivo)."""
 
+    file = serializers.SerializerMethodField()
+
+    def get_file(self, obj) -> str:
+        url = reverse("core:attachment_download", args=[obj.pk])
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
+
     class Meta:
         model = Attachment
         fields = (
@@ -283,12 +294,12 @@ class TransactionSerializer(serializers.ModelSerializer):
         """Acota cuenta, categoría, cuenta destino, deuda, meta y etiquetas al usuario autenticado."""
         super().__init__(*args, **kwargs)
         user = self.context["request"].user
-        self.fields["account"].queryset = Account.objects.filter(user=user)
-        self.fields["category"].queryset = Category.objects.filter(user=user)
-        self.fields["transfer_to_account"].queryset = Account.objects.filter(user=user)
-        self.fields["debt"].queryset = Debt.objects.filter(user=user)
-        self.fields["goal"].queryset = Goal.objects.filter(user=user)
-        self.fields["tags"].queryset = Tag.objects.filter(user=user)
+        self.fields["account"].queryset = Account.objects.filter(user_id=user.pk)
+        self.fields["category"].queryset = Category.objects.filter(user_id=user.pk)
+        self.fields["transfer_to_account"].queryset = Account.objects.filter(user_id=user.pk)
+        self.fields["debt"].queryset = Debt.objects.filter(user_id=user.pk)
+        self.fields["goal"].queryset = Goal.objects.filter(user_id=user.pk)
+        self.fields["tags"].queryset = Tag.objects.filter(user_id=user.pk)
 
     def create(self, validated_data):
         """Asocia la transacción creada al usuario autenticado de la petición."""
@@ -321,11 +332,20 @@ class TransactionSerializer(serializers.ModelSerializer):
             "transaction_type", getattr(self.instance, "transaction_type", None)
         )
         amount = attrs.get("amount", getattr(self.instance, "amount", None))
-        if goal and amount and tx_type != "transfer":
-            if tx_type == "income":
-                validate_income_against_goal(goal, amount)
-            elif tx_type == "expense":
-                validate_expense_against_goal(goal, amount)
+        debt = association_before_transaction(debt, self.instance)
+        goal = association_before_transaction(goal, self.instance)
+        try:
+            if debt and amount and tx_type == "expense":
+                from core.services.debts import validate_expense_against_debt
+
+                validate_expense_against_debt(debt, amount)
+            if goal and amount and tx_type != "transfer":
+                if tx_type == "income":
+                    validate_income_against_goal(goal, amount)
+                elif tx_type == "expense":
+                    validate_expense_against_goal(goal, amount)
+        except ValidationError as exc:
+            raise serializers.ValidationError(exc.messages)
         return attrs
 
 
@@ -357,7 +377,7 @@ class BudgetSerializer(serializers.ModelSerializer):
         """Acota el queryset de categorías al usuario autenticado."""
         super().__init__(*args, **kwargs)
         user = self.context["request"].user
-        self.fields["category"].queryset = Category.objects.filter(user=user)
+        self.fields["category"].queryset = Category.objects.filter(user_id=user.pk)
 
     def create(self, validated_data):
         """Asocia el presupuesto creado al usuario autenticado de la petición."""
@@ -396,13 +416,13 @@ class DebtSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "created_at", "updated_at", "monto_pendiente", "estado", "percent_paid")
 
-    def get_monto_pendiente(self, obj):
+    def get_monto_pendiente(self, obj) -> str:
         return str(obj.monto_pendiente)
 
-    def get_estado(self, obj):
+    def get_estado(self, obj) -> str:
         return str(obj.estado)
 
-    def get_percent_paid(self, obj):
+    def get_percent_paid(self, obj) -> str:
         return str(obj.percent_paid)
 
     def create(self, validated_data):
@@ -439,13 +459,13 @@ class GoalSerializer(serializers.ModelSerializer):
             "percent_abonado",
         )
 
-    def get_monto_pendiente(self, obj):
+    def get_monto_pendiente(self, obj) -> str:
         return str(obj.monto_pendiente)
 
-    def get_estado(self, obj):
+    def get_estado(self, obj) -> str:
         return str(obj.estado)
 
-    def get_percent_abonado(self, obj):
+    def get_percent_abonado(self, obj) -> str:
         return str(obj.percent_abonado)
 
     def create(self, validated_data):
@@ -473,7 +493,7 @@ class ContactSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "status", "created_at")
 
-    def get_contact_name(self, obj):
+    def get_contact_name(self, obj) -> str:
         return obj.contact.get_full_name() or obj.contact.username
 
 
@@ -513,10 +533,10 @@ class ContactGroupSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         user = self.context["request"].user
         self.fields["members"].child_relation.queryset = Contact.objects.filter(
-            user=user
+            user_id=user.pk
         )
 
-    def get_members_detail(self, obj):
+    def get_members_detail(self, obj) -> list[dict]:
         return [
             {
                 "id": m.pk,
@@ -526,13 +546,13 @@ class ContactGroupSerializer(serializers.ModelSerializer):
             for m in obj.members.select_related("contact")
         ]
 
-    def get_member_count(self, obj):
+    def get_member_count(self, obj) -> int:
         return obj.members.count()
 
     def validate_name(self, value):
         """Valida que el usuario no tenga otro grupo con el mismo nombre."""
         user = self.context["request"].user
-        qs = ContactGroup.objects.filter(user=user, name=value)
+        qs = ContactGroup.objects.filter(user_id=user.pk, name=value)
         if self.instance is not None:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
@@ -614,7 +634,10 @@ class SharedExpensePaymentSerializer(serializers.ModelSerializer):
             get_shared_expense_payment_transaction_type,
         )
 
-        validate_payment_against_participant(attrs["participant"], attrs["amount"])
+        try:
+            validate_payment_against_participant(attrs["participant"], attrs["amount"])
+        except ValidationError as exc:
+            raise serializers.ValidationError({"amount": exc.messages})
         shared_expense = self.context.get("shared_expense")
         payer = shared_expense.payer_participant if shared_expense else None
         tx_type = get_shared_expense_payment_transaction_type(
@@ -710,19 +733,19 @@ class SharedExpenseSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         user = self.context["request"].user
-        self.fields["account"].queryset = Account.objects.filter(user=user, is_active=True)
+        self.fields["account"].queryset = Account.objects.filter(user_id=user.pk, is_active=True)
         self.fields["category"].queryset = Category.objects.filter(
-            user=user, is_active=True, category_type=Category.CategoryType.EXPENSE
+            user_id=user.pk, is_active=True, category_type=Category.CategoryType.EXPENSE
         )
-        self.fields["contacts"].child_relation.queryset = Contact.objects.filter(user=user)
-        self.fields["groups"].child_relation.queryset = ContactGroup.objects.filter(user=user)
+        self.fields["contacts"].child_relation.queryset = Contact.objects.filter(user_id=user.pk)
+        self.fields["groups"].child_relation.queryset = ContactGroup.objects.filter(user_id=user.pk)
 
-    def get_account_detail(self, obj):
+    def get_account_detail(self, obj) -> dict | None:
         if obj.account is None:
             return None
         return {"id": obj.account.pk, "name": obj.account.name}
 
-    def get_category_detail(self, obj):
+    def get_category_detail(self, obj) -> dict | None:
         if obj.category is None:
             return None
         return {"id": obj.category.pk, "name": obj.category.name}
@@ -735,7 +758,7 @@ class SharedExpenseSerializer(serializers.ModelSerializer):
         kind, _, pk = (raw_payer or "").partition(":")
         if kind != "contact" or not pk:
             return None
-        contact = Contact.objects.filter(user=user, pk=pk).first()
+        contact = Contact.objects.filter(user_id=user.pk, pk=pk).first()
         if contact is None:
             return None
         return ParticipantSpec(False, contact)

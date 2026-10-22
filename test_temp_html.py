@@ -11,12 +11,14 @@ def test_form_html_structure():
     html = response.content.decode('utf-8')
     
     # Verificar estructura básica del formulario
-    assert '<form method="post">' in html, 'form tag not found'
+    assert '<form method="post"' in html, 'form tag not found'
     assert 'type="submit"' in html, 'submit button not found'
     
     # Encontrar posición relativa de </form> y el botón submit
-    form_end = html.find('</form>')
-    submit_btn = html.find('type="submit"')
+    form_start = html.index('<form method="post" novalidate>')
+    form_end = html.find('</form>', form_start)
+    submit_btn = html.find('type="submit"', form_start)
+    assert form_start < submit_btn < form_end
     
     print(f'submit button at char: {submit_btn}')
     print(f'</form> at char: {form_end}')

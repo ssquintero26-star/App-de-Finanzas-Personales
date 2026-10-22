@@ -162,4 +162,5 @@ urlpatterns = [
     path("transactions/export/csv/", views.CSVExportView.as_view(), name="csv_export"),
     path("transactions/import/csv/", views.CSVImportView.as_view(), name="csv_import"),
     path("reports/pdf/", views.PDFReportView.as_view(), name="pdf_report"),
+    path("attachments/<int:pk>/download/", views.AttachmentDownloadView.as_view(), name="attachment_download"),
 ]
