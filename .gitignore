@@ -6,6 +6,8 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.qa-packages/
+backups/
 venv/
 env/
 

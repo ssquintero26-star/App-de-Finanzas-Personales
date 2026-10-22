@@ -1,8 +1,12 @@
 """Comando de gestión `setup_demo`: carga datos de demostración para probar FinTrack."""
 
+from calendar import monthrange
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
+from django.db import transaction as db_transaction
+from django.utils import timezone
 
 from core.models import (
     Account,
@@ -37,6 +41,7 @@ class Command(BaseCommand):
 
     help = "Carga datos de demostración con usuario demo@fintrack.local / demo1234"
 
+    @db_transaction.atomic
     def handle(self, *args, **options):
         """Ejecuta la carga de datos demo descrita en la docstring de la clase."""
         user, created = User.objects.get_or_create(
@@ -277,4 +282,107 @@ class Command(BaseCommand):
                 account=checking,
             )
 
+        self.load_monthly_history(
+            user, checking, savings, salary_cat, food_cat, transport_cat,
+            contacto_juan, contacto_maria,
+        )
         self.stdout.write(self.style.SUCCESS("Datos de demostración cargados correctamente."))
+
+    def load_monthly_history(
+        self, user, checking, savings, salary_cat, food_cat, transport_cat,
+        contacto_juan, contacto_maria,
+    ):
+        """Carga doce meses móviles sin duplicar ni modificar registros existentes."""
+        today = timezone.localdate()
+        housing, _ = Category.objects.get_or_create(
+            user=user, name="Vivienda", category_type="expense",
+            defaults={"color": "#8b5cf6"},
+        )
+        utilities, _ = Category.objects.get_or_create(
+            user=user, name="Servicios", category_type="expense",
+            defaults={"color": "#06b6d4"},
+        )
+        freelance, _ = Category.objects.get_or_create(
+            user=user, name="Trabajo independiente", category_type="income",
+            defaults={"color": "#10b981"},
+        )
+        recurrent = Tag.objects.get(user=user, name="recurrente")
+        current = today.replace(day=1)
+        months = []
+        for _ in range(12):
+            months.insert(0, current)
+            current = (current - timedelta(days=1)).replace(day=1)
+
+        added = 0
+        for index, month in enumerate(months):
+            label = month.strftime("%Y-%m")
+            rows = [
+                (1, "income", salary_cat, "3800000", "Salario"),
+                (3, "expense", housing, "1200000", "Arriendo"),
+                (5, "expense", food_cat, str(420000 + index * 5000), "Mercado"),
+                (8, "expense", utilities, str(210000 + index * 2000), "Servicios e internet"),
+                (10, "expense", transport_cat, str(160000 + index * 3000), "Transporte mensual"),
+                (12, "transfer", None, "400000", "Transferencia a ahorros"),
+                (15, "income", freelance, str(300000 + index * 25000), "Proyecto independiente"),
+                (18, "expense", food_cat, str(85000 + index * 1500), "Restaurante"),
+                (21, "expense", transport_cat, "60000", "Recarga de transporte"),
+            ]
+            for day, kind, category, amount, description in rows:
+                tx_date = month.replace(day=day)
+                if tx_date > today:
+                    continue
+                description = f"{description} · demo {label}"
+                amount = Decimal(amount).quantize(Decimal("0.01"))
+                content_hash = Transaction.compute_hash(
+                    user.pk, checking.pk, tx_date, amount, description
+                )
+                tx, created = Transaction.objects.get_or_create(
+                    user=user, content_hash=content_hash,
+                    defaults={
+                        "account": checking, "category": category,
+                        "transaction_type": kind, "amount": amount,
+                        "description": description, "date": tx_date,
+                        "transfer_to_account": savings if kind == "transfer" else None,
+                        "notes": "Movimiento de demostración mensual en COP.",
+                    },
+                )
+                if created:
+                    tx.tags.add(recurrent)
+                    added += 1
+            for category, amount in [(food_cat, "650000"), (transport_cat, "300000"), (utilities, "300000")]:
+                Budget.objects.get_or_create(
+                    user=user, category=category, period_start=month,
+                    period_end=month.replace(day=monthrange(month.year, month.month)[1]),
+                    defaults={"amount": Decimal(amount), "notes": "Presupuesto mensual demo"},
+                )
+
+        specs = build_participant_specs(True, [contacto_juan, contacto_maria])
+        for title, status in [("Almuerzo del equipo", "pendiente"), ("Compra para reunión", "parcial"), ("Salida de fin de semana", "completado")]:
+            name = f"{title} · demo {today:%Y-%m}"
+            if SharedExpense.objects.filter(user=user, name=name).exists():
+                continue
+            expense = create_shared_expense(
+                user=user, name=name, description="Ejemplo del mes actual",
+                account=checking, category=food_cat, date=today.replace(day=1),
+                total_amount=Decimal("90000.00"), participant_specs=specs,
+                payer_spec=specs[0],
+            )
+            for participant in expense.participants.exclude(is_owner=True):
+                if status == "completado" or (status == "parcial" and participant.contact_id == contacto_juan.pk):
+                    register_shared_expense_payment(
+                        participant=participant,
+                        amount=participant.amount_pending if status == "completado" else Decimal("10000.00"),
+                        date=today.replace(day=1), account=checking,
+                    )
+
+        Debt.objects.get_or_create(
+            user=user, nombre="Crédito educativo · demo",
+            defaults={"prestamista": "Cooperativa", "monto_requerido": Decimal("2400000"),
+                      "monto_pagado": Decimal("600000"), "fecha_limite": today + timedelta(days=15)},
+        )
+        Goal.objects.get_or_create(
+            user=user, nombre="Renovar computador · demo",
+            defaults={"monto_requerido": Decimal("4500000"), "monto_abonado": Decimal("1800000"),
+                      "fecha_limite": today + timedelta(days=180)},
+        )
+        self.stdout.write(f"Historial mensual: {added} movimientos nuevos; 12 meses de presupuestos.")

@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from django.db.models import Sum
 from django.db.models.functions import TruncMonth
+from django.utils import timezone
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
@@ -63,9 +64,9 @@ def generate_transactions_pdf(user, queryset=None):
 
 def get_monthly_income_expense(user, months=6):
     """Devuelve ingresos y gastos agrupados por mes (últimos `months` meses) para el gráfico de barras."""
-    from datetime import date
-
-    today = date.today()
+    if months < 1:
+        raise ValueError("months debe ser mayor a cero.")
+    today = timezone.localdate()
     month_starts = []
     current = today.replace(day=1)
     for _ in range(months):
@@ -78,7 +79,7 @@ def get_monthly_income_expense(user, months=6):
     start = month_starts[0]
 
     qs = (
-        Transaction.objects.filter(user=user, date__gte=start)
+        Transaction.objects.filter(user=user, date__gte=start, date__lte=today)
         .annotate(month=TruncMonth("date"))
         .values("month", "transaction_type")
         .annotate(total=Sum("amount"))

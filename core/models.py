@@ -214,7 +214,7 @@ class Tag(TimestampedUserOwnedModel):
         return self.name
 
 
-class Transaction(models.Model):
+class Transaction(TimestampedUserOwnedModel):
     """Movimiento financiero de un usuario: ingreso, gasto o transferencia entre cuentas.
 
     Las transferencias usan `account` como origen y `transfer_to_account`
@@ -833,6 +833,8 @@ class SharedExpenseParticipant(models.Model):
         default=Decimal("0.00"),
         validators=[MinValueValidator(Decimal("0.00"))],
     )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
     class Meta:
@@ -924,6 +926,7 @@ class SharedExpensePayment(models.Model):
     )
     date = models.DateField("fecha")
     notes = models.TextField("observación", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     account = models.ForeignKey(
         "Account",
         on_delete=models.SET_NULL,

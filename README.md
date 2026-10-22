@@ -10,7 +10,7 @@ de cálculo de saldos, tarjetas de crédito, reportes e importación/exportació
 # FinTrack
 
 
-Aplicación web de gestión financiera personal construida con **Django 4.x** y **Django REST Framework**.
+Aplicación web de gestión financiera personal construida con **Django 5.2 LTS** y **Django REST Framework**.
 
 ## Características
 
@@ -46,7 +46,7 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
-`setup_demo` crea (si no existe) el usuario **demo@fintrack.local** / **demo1234**, junto con cuentas, categorías, un presupuesto y transacciones de ejemplo. Es idempotente: puedes correrlo varias veces sin duplicar datos.
+`setup_demo` crea (si no existe) el usuario **demo@fintrack.local** / **demo1234**, junto con doce meses móviles de ingresos, gastos, transferencias y presupuestos. Incluye cuentas, categorías, deudas, metas y gastos compartidos pendientes, parciales y completados. Es idempotente: puedes correrlo varias veces sin duplicar datos.
 
 ## Instalación (Linux/macOS)
 
@@ -169,6 +169,10 @@ pre-commit run --all-files
 > Actualmente no hay medición de cobertura configurada (`pytest-cov` no está en `requirements.txt`).
 
 ## Despliegue / producción
+
+Usa el perfil `fintrack.production`, la plantilla `.env.production.example` y
+la guía [PRODUCCION.md](PRODUCCION.md) para desplegar con HTTPS, cookies seguras,
+WhiteNoise y Waitress. La base de datos pública debe estar separada de la demo.
 
 Antes de desplegar en producción:
 
