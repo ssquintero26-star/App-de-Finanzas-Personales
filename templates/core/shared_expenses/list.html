@@ -49,7 +49,9 @@
             </td>
             <td class="actions">
                 <a href="{% url 'core:shared_expense_detail' se.pk %}">Ver</a>
+                {% if not se.transaction_id or se.transaction_id == latest_transaction_id %}
                 <a href="{% url 'core:shared_expense_delete' se.pk %}" class="text-danger">Eliminar</a>
+                {% endif %}
             </td>
         </tr>
         {% empty %}

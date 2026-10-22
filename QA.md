@@ -38,8 +38,8 @@ La copia de seguridad anterior a la migración y a la carga está en `backups/`.
 
 ## Comprobaciones
 
-- Suite completa: **207 pruebas aprobadas**, sin fallos, en el entorno real
-  actualizado a Django 5.2.18. Resultado guardado en `qa-final-full.log`.
+- Suite completa, incluida la pila: **217 pruebas aprobadas**, sin fallos,
+  en Python 3.12 y Django 5.2.18. Resultado guardado en `qa-stack-full.log`.
 - El recorrido de demo prueba login, dashboard, listas, formularios, detalles,
   exportación CSV/PDF, API y cierre de sesión. También prueba que repetir la carga
   no cambie los conteos.
@@ -69,3 +69,21 @@ respaldos con restauración probada y una base de datos separada de la demo.
 La configuración SQLite incluida está orientada a una única instancia;
 un despliegue concurrente con varias instancias requiere PostgreSQL y pruebas
 de carga sobre esa infraestructura.
+
+## Pila LIFO de transacciones
+
+`TransactionStack` es una pila enlazada con operaciones `push`, `peek` y `pop`
+O(1). Se reconstruye por usuario desde los IDs en orden de inserción; reconstruir
+la pila cuesta O(n). No depende de la fecha contable ni de fechas de creación
+editables, y no se conserva estado global entre peticiones.
+
+La eliminación web y API usa un servicio común que comprueba el tope, ejecuta
+`pop`, revierte los efectos financieros y borra la transacción de forma atómica.
+Las altas y bajas bloquean la misma fila de usuario en motores con bloqueo de
+filas. La lista muestra primero la última registrada. Eliminar un gasto compartido
+también respeta la pila cuando tiene una transacción asociada.
+
+Las pruebas específicas cubren LIFO, pila vacía, reconstrucción, aislamiento por
+usuario, fechas antiguas o modificadas, confirmaciones desactualizadas, reversión
+de saldos ante errores y protección de gastos compartidos en web y API.
+No se añaden campos ni migraciones de base de datos.

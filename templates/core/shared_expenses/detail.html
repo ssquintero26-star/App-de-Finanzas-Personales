@@ -7,7 +7,9 @@
     <h1>{{ shared_expense.name }}</h1>
     <div>
         <a href="{% url 'core:shared_expense_payment_create' shared_expense.pk %}" class="btn btn-primary">Registrar pago</a>
+        {% if can_delete %}
         <a href="{% url 'core:shared_expense_delete' shared_expense.pk %}" class="btn btn-danger">Eliminar</a>
+        {% endif %}
         <a href="{% url 'core:shared_expense_list' %}" class="btn">Volver</a>
     </div>
 </div>

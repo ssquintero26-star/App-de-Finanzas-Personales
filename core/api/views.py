@@ -49,12 +49,11 @@ from core.models import (
     Transaction,
 )
 from core.services.contacts import add_contact, remove_contact, search_users
-from core.services.transactions import validate_latest_transaction
+from core.services.transactions import delete_transaction
 from core.services.debts import apply_transaction_to_debt, revert_transaction_from_debt
 from core.services.goals import apply_transaction_to_goal, revert_transaction_from_goal
 from core.services.shared_expenses import (
     delete_shared_expense,
-    revert_shared_expense_payment_transaction,
 )
 from core.services.accounts import calculate_account_balance, get_user_total_balance
 from core.services.csv_io import export_transactions_csv, import_transactions_csv
@@ -305,11 +304,7 @@ class TransactionViewSet(UserOwnedViewSet):
     def perform_destroy(self, instance):
         """Revierte el efecto de la transacción sobre su deuda/meta/pago de gasto
         compartido asociado antes de eliminarla."""
-        validate_latest_transaction(instance)
-        revert_transaction_from_debt(instance)
-        revert_transaction_from_goal(instance)
-        revert_shared_expense_payment_transaction(instance)
-        instance.delete()
+        delete_transaction(instance)
 
     @action(detail=True, methods=["post"])
     def reconcile(self, request, pk=None):

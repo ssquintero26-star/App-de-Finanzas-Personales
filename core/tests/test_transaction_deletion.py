@@ -60,12 +60,15 @@ def test_api_enforces_same_deletion_rule(history):
 
 
 @pytest.mark.django_db
-def test_same_date_uses_last_registered_and_ignores_backdated_entries(client, history):
+def test_stack_uses_registration_order_even_for_backdated_entries(client, history):
     older, latest = history
     same_date = TransactionFactory(user=older.user, date=latest.date)
     backdated = TransactionFactory(user=older.user, date="2025-12-01")
     assert client.post(reverse("core:transaction_delete", args=[latest.pk])).status_code == 403
-    assert client.post(reverse("core:transaction_delete", args=[backdated.pk])).status_code == 403
+    assert client.post(reverse("core:transaction_delete", args=[same_date.pk])).status_code == 403
+    response = client.get(reverse("core:transaction_list"))
+    assert response.context["transactions"][0].pk == backdated.pk
+    assert client.post(reverse("core:transaction_delete", args=[backdated.pk])).status_code == 302
     assert client.post(reverse("core:transaction_delete", args=[same_date.pk])).status_code == 302
 
 

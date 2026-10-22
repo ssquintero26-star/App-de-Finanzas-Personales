@@ -19,6 +19,7 @@ from django.core.validators import (
     MinValueValidator,
 )
 from django.db import models
+from django.db import transaction as db_transaction
 from django.utils import timezone
 
 class TimestampedUserOwnedModel(models.Model):
@@ -325,7 +326,12 @@ class Transaction(TimestampedUserOwnedModel):
             self.amount,
             self.description,
         )
-        super().save(*args, **kwargs)
+        if self._state.adding:
+            with db_transaction.atomic():
+                User.objects.select_for_update().only("pk").get(pk=self.user_id)
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
 
     def reconcile(self):
         """Marca la transacción como conciliada y registra la fecha/hora de conciliación."""

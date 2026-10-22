@@ -12,7 +12,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.template import Context
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -2003,11 +2003,10 @@ class TestDeleteSharedExpense:
         assert not SharedExpense.objects.filter(pk=se_pk).exists()
         assert not SharedExpenseParticipant.objects.filter(shared_expense_id=se_pk).exists()
 
-    def test_delete_does_not_touch_income_transactions_already_received(
+    def test_delete_requires_removing_later_payment_transactions_first(
         self, user, account, category, contact_juan, contact_maria
     ):
-        """Borrar el gasto compartido no debe borrar las Transacciones de
-        ingreso de pagos ya recibidos: ese dinero entró de verdad a una cuenta."""
+        """Un gasto no puede eliminar su transacción por debajo de un pago posterior."""
         specs = build_participant_specs(True, [contact_juan, contact_maria])
         se = create_shared_expense(
             user=user, name="Cena", description="", account=account, category=category,
@@ -2020,8 +2019,10 @@ class TestDeleteSharedExpense:
             account=account,
         )
         income_tx_pk = payment.transaction.pk
-        delete_shared_expense(se)
+        with pytest.raises(PermissionDenied):
+            delete_shared_expense(se)
         assert Transaction.objects.filter(pk=income_tx_pk).exists()
+        assert SharedExpense.objects.filter(pk=se.pk).exists()
 
 
 @pytest.mark.django_db

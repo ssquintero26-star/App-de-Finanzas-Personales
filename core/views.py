@@ -66,6 +66,7 @@ from core.models import (
 )
 from core.services.contacts import add_contact, remove_contact, search_users
 from core.services.transactions import (
+    delete_transaction,
     get_latest_transaction_id,
     validate_latest_transaction,
 )
@@ -84,7 +85,6 @@ from core.services.shared_expenses import (
     create_shared_expense,
     delete_shared_expense,
     register_shared_expense_payment,
-    revert_shared_expense_payment_transaction,
 )
 from core.services.accounts import calculate_account_balance, get_user_total_balance
 from core.services.credit_cards import (
@@ -848,6 +848,7 @@ class SharedExpenseListView(UserOwnedMixin, ListView):
             se.total_amount_display = format_money_display(se.total_amount)
             se.amount_recovered_display = format_money_display(se.amount_recovered)
             se.amount_pending_display = format_money_display(se.amount_pending)
+        ctx["latest_transaction_id"] = get_latest_transaction_id(self.request.user)
         return ctx
 
 
@@ -906,6 +907,10 @@ class SharedExpenseDetailView(UserOwnedMixin, DetailView):
         """Agrega montos formateados del gasto y de cada participante."""
         ctx = super().get_context_data(**kwargs)
         se = self.object
+        ctx["can_delete"] = (
+            se.transaction_id is None
+            or se.transaction_id == get_latest_transaction_id(self.request.user)
+        )
         se.total_amount_display = format_money_display(se.total_amount)
         se.amount_recovered_display = format_money_display(se.amount_recovered)
         se.amount_pending_display = format_money_display(se.amount_pending)
@@ -977,6 +982,12 @@ class SharedExpenseDeleteView(UserOwnedMixin, DeleteView):
     template_name = "core/shared_expenses/confirm_delete.html"
     success_url = reverse_lazy("core:shared_expense_list")
 
+    def get_object(self, queryset=None):
+        expense = super().get_object(queryset)
+        if expense.transaction_id:
+            validate_latest_transaction(expense.transaction)
+        return expense
+
     def form_valid(self, form):
         """Elimina vía el servicio (borra la Transacción, que cascada el resto)."""
         delete_shared_expense(self.object)
@@ -995,7 +1006,7 @@ class TransactionListView(UserOwnedMixin, ListView):
         """Aplica los filtros de búsqueda/cuenta/categoría/tipo/fecha/conciliación del formulario GET."""
         qs = super().get_queryset().select_related(
             "account", "category", "shared_expense", "shared_expense_payment"
-        )
+        ).order_by("-pk")
         form = TransactionFilterForm(self.request.user, self.request.GET)
         if form.is_valid():
             if form.cleaned_data.get("q"):
@@ -1096,12 +1107,8 @@ class TransactionDeleteView(UserOwnedMixin, DeleteView):
     def form_valid(self, form):
         """Revierte el efecto de la transacción sobre su deuda/meta/pago de gasto
         compartido asociado antes de eliminarla."""
-        with db_transaction.atomic():
-            validate_latest_transaction(self.object)
-            revert_transaction_from_debt(self.object)
-            revert_transaction_from_goal(self.object)
-            revert_shared_expense_payment_transaction(self.object)
-            return super().form_valid(form)
+        delete_transaction(self.object)
+        return redirect(self.success_url)
 
 
 class TransactionReconcileView(LoginRequiredMixin, View):

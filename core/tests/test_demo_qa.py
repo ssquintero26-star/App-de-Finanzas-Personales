@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 
 from core.models import Budget, SharedExpense, SharedExpensePayment, Transaction, User
 from core.services.reports import get_monthly_income_expense
+from core.services.transactions import get_latest_transaction_id
 
 
 @pytest.mark.django_db
@@ -42,7 +43,12 @@ def test_demo_is_repeatable_and_all_screens_and_api_render(client):
             "shared_expense_delete",
         ):
             response = client.get(reverse(f"core:{route}", args=[expense.pk]))
-            assert response.status_code == 200, (route, expense.pk)
+            blocked = (
+                route == "shared_expense_delete"
+                and expense.transaction_id is not None
+                and expense.transaction_id != get_latest_transaction_id(user)
+            )
+            assert response.status_code == (403 if blocked else 200), (route, expense.pk)
     for resource, relation in [
         ("debt", user.debts), ("goal", user.goals), ("contact", user.contacts),
         ("group", user.contact_groups),
