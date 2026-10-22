@@ -9,6 +9,39 @@ de cálculo de saldos, tarjetas de crédito, reportes e importación/exportació
 
 # FinTrack
 
+## Estructuras de datos solicitadas por el profesor
+
+En el proyecto usamos **cola con prioridad, pila y arreglos mediante listas de
+Python**. La base de datos guarda los registros; estas estructuras permiten
+organizarlos y procesarlos en memoria.
+
+| Estructura | Uso en la aplicación | Dónde está implementada |
+| --- | --- | --- |
+| **Cola con prioridad** | Ordena los pagos pendientes según su urgencia y fecha límite. El más urgente se atiende primero. | Clase `PaymentPriorityQueue` y función `build_payment_queue()` en [core/services/payment_queue.py](core/services/payment_queue.py). |
+| **Pila (LIFO)** | Controla la eliminación de transacciones: solo se puede eliminar la última registrada. Luego queda disponible la anterior. | Clase `TransactionStack` en [core/services/transaction_stack.py](core/services/transaction_stack.py) y servicio `delete_transaction()` en [core/services/transactions.py](core/services/transactions.py). |
+| **Arreglo mediante listas de Python** | Guarda el monto de cada participante de un gasto compartido y las series de ingresos y gastos de los gráficos. | Lista `amounts_cents` en [core/services/shared_expenses.py](core/services/shared_expenses.py) y listas `month_labels`, `income_data`, `expense_data` en [core/services/reports.py](core/services/reports.py). |
+
+### Ejemplos sencillos para explicar en clase
+
+- **Cola con prioridad:** una deuda que vence hoy se atiende antes que una que
+  vence dentro de un mes. Usamos `heapq`, con prioridad 1 para lo más urgente y
+  5 para lo menos urgente. Si coinciden prioridad y fecha, se respeta el orden
+  de entrada. Se puede demostrar con
+  `python manage.py show_payment_queue demo@fintrack.local`.
+- **Pila:** es como una pila de platos. Si registro A, luego B y después C,
+  primero puedo eliminar C, después B y finalmente A. `push` agrega al tope,
+  `peek` lo consulta y `pop` lo retira. Importa el orden de registro, aunque
+  la última transacción tenga una fecha antigua.
+- **Arreglo:** es como una fila de casillas numeradas. Si tres personas deben
+  pagar 30.000 cada una, sus montos se guardan como `[30000, 30000, 30000]`.
+  Cada posición corresponde a una persona. En Python usamos listas dinámicas,
+  no un arreglo de tamaño fijo.
+
+Estas estructuras cumplen funciones diferentes: **la cola prioriza pagos, la
+pila controla el orden de eliminación y las listas agrupan valores**. Los
+patrones Factory, Strategy y Facade descritos arriba son patrones de diseño,
+no estructuras de datos.
+
 ## Pila de transacciones (LIFO)
 
 `core/services/transaction_stack.py` implementa una pila enlazada real:
